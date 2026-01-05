@@ -1,52 +1,64 @@
-library(reticulate)
-assignInNamespace("is_conda_python", function(x){ return(FALSE) }, ns="reticulate")
-reticulate::use_python("/opt/homebrew/Cellar/micromamba/2.3.3_1/envs/geoai_metal/bin/python")
-py_config()
-
 # list of packages to load
 packagesToLoad <- c(
-  "terra",
-  "png",
-  "tensorflow", 
-  "keras",      
-  "tfdatasets", 
-  "reticulate",
-  "sf",
-  "osmdata",
-  "rsample",
-  "tfdatasets",
-  "purrr",
-  "stars",
-  "magick",
-  "fs"
+  'terra',
+  'png',
+  'tensorflow',
+  'keras',
+  'tfdatasets',
+  'reticulate',
+  'sf',
+  'rsample',
+  'tfdatasets',
+  'purrr',
+  'stars',
+  'magick',
+  'fs',
+  'ggplot2'
 )
 
+# VAT-specific packages
+appendPackagesToLoad <- c(
+  'jsonlite',
+  'yaml',
+  'glue'
+)
 
 # mandantory folder structure
 projectDirList <- c(
-  "data/",
-  "data/modelling/",
-  "data/aoi/",
-  "data/raw/",
-  "data/raw/dgm1_ni/",
-  "data/raw/dgm1_st/",
-  "data/raw/dgm1_th/",
-  "data/dgm1/",
-  "data/modelling/model_training_data/",
-  "data/modelling/model_training_data/dop/",
-  "data/modelling/model_training_data/bui/",
-  "data/modelling/models/",
-  "data/modelling/prediction/",
-  "data/modelling/validation/",
-  "data/modelling/model_testing_data/",
-  "data/modelling/model_testing_data/dop/",
-  "data/modelling/model_testing_data/bui/",
-  "docs/",
-  "run/",
-  "tmp",
-  "src/",
-  "src/functions/"
+  'data/',
+  'data/modelling/',
+  'data/aoi/',
+  'data/raw/',
+  'data/raw/dgm1_ni/',
+  'data/raw/dgm1_st/',
+  'data/raw/dgm1_th/',
+  'data/dgm1/',
+  'data/dgm1/dgm_tiles/',
+  'data/dgm1/processed',
+  'data/dgm1/processed/VAT',
+  'data/modelling/model_training_data/',
+  'data/modelling/model_training_data/dgm/',
+  'data/modelling/model_training_data/mask/',
+  'data/modelling/models/',
+  'data/modelling/prediction/',
+  'data/modelling/validation/',
+  'data/modelling/model_testing_data/',
+  'data/modelling/model_testing_data/dgm/',
+  'data/modelling/model_testing_data/mask/',
+  'docs/',
+  'run/',
+  'tmp',
+  'src/',
+  'src/functions/'
 )
+
+# VAT-specific folders
+appendProjectDirList <- c(
+  'data/modelling/dgm_vat/',
+  'data/modelling/dgm_vat/individual_layers/',
+  'data/modelling/dgm_vat/metadata/'
+)
+
 
 # append additional folders if defined by calling script
 if (exists("appendProjectDirList") && appendProjectDirList[[1]] != "") {
@@ -84,4 +96,3 @@ lapply(
   ),
   source
 )
-

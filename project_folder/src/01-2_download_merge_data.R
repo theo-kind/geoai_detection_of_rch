@@ -1,8 +1,8 @@
-# ================================= Set environment =================================
+# ================================= Set up =================================
 library(envimaR)
 
 # Define the project root folder
-rootDir <- paste0(getwd(),"/geoAI_kiln_sites")
+rootDir <- paste0(getwd(),"/project_folder")
 
 # Get the root folder actually used
 rootDir <- envimaR::alternativeEnvi(
@@ -16,12 +16,11 @@ rootDir <- envimaR::alternativeEnvi(
 path <- file.path(rootDir, "src", "00_geoAI_setup.R")
 source(path, echo = TRUE)
 
-# ================================= Lower Saxony: DGM1 Download, Merge & Clip =================================
-
 # Read AOI
-aoi <- st_read(file.path(envrmt$path_aoi, "harz_boundary_2000m_buffer.shp"))
+aoi <- st_read(file.path(envrmt$path_aoi, "harz_boundary.shp"))
 
-# Define URLs
+# ================================= Lower Saxony: DGM1 Download, Merge & Clip =================================
+# Define URL
 geojson_url <- "https://arcgis-geojson.s3.eu-de.cloud-object-storage.appdomain.cloud/dgm1/lgln-opengeodata-dgm1.geojson"
 
 # Download and parse GeoJSON
@@ -76,7 +75,8 @@ if (length(dgm_tiles) == 0) {
 }
 
 # Merge tiles
-dgm_merged <- do.call(mosaic, c(dgm_tiles, list(fun = "mean")))
+dgm_merged <- do.call(terra::mosaic, c(dgm_tiles, list(fun = mean)))
+
 
 # Reproject AOI to match DGM if necessary
 if (st_crs(aoi)$proj4string != crs(dgm_merged)) {
@@ -98,11 +98,8 @@ writeRaster(dgm_clipped, output_path, overwrite = TRUE)
 
 # ================================= DGM1 Saxony-Anhalt Merge & Clip =================================
 # (1) Manually download "teil 1" and "teil 2" from https://www.lvermgeo.sachsen-anhalt.de/de/gdp-dgm1-landesweit.html
-# (2) Save both .zip files in the folder "data/raw/dgm1_st"
+# (2) Save both .zip files in the folder "data/raw/dgm1_st" 
 # (3) Unzip the files
-
-# Read AOI
-aoi <- st_read(file.path(envrmt$path_aoi, "harz_boundary_2000m_buffer.shp"))
 
 # Find all TIF files in path_dgm1_st
 tif_files <- list.files(
@@ -119,7 +116,7 @@ if (length(tif_files) == 0) {
 
 # Transform AOI to match DGM CRS
 temp_tile <- rast(tif_files[1])
-aoi_dgm_crs <- st_transform(aoi, crs(temp_tile))
+aoi_dgm_crs <- st_transform(aoi, 25832)
 aoi_vect <- vect(aoi_dgm_crs)
 
 # Load and clip all TIF files
@@ -147,20 +144,17 @@ if (length(dgm_tiles) == 0) {
 }
 
 # Merge all tiles
-dgm_merged <- do.call(mosaic, c(dgm_tiles, fun = "mean"))
+dgm_merged <- do.call(terra::mosaic, c(dgm_tiles, fun = mean))
 
 # Save clipped DGM
 output_path <- file.path(envrmt$path_raw, "dgm1_merged_st.tif")
 writeRaster(dgm_merged, output_path, overwrite = TRUE)
 
 
-# ================================= Thüringen: DGM1 Extract, Merge & Clip =================================
-# Manually download DGM1 data from: https://geoportal.thueringen.de/gdi-th/download-offene-geodaten/download-hoehendaten
+# ================================= Thuringia: DGM1 Extract, Merge & Clip =================================
+# (1) Manually download DGM1 data from: https://geoportal.thueringen.de/gdi-th/download-offene-geodaten/download-hoehendaten
 # each file is approximitly 10 GB large
-# Save .zip file (e.g., "Mehrfachdownload_wKrrO6_UrBfm4.zip") in path_dgm1_th folder for further processing
-
-# Read AOI
-aoi <- st_read(file.path(envrmt$path_aoi, "harz_boundary_2000m_buffer.shp"))
+# (2) Save .zip file (e.g., "Mehrfachdownload_wKrrO6_UrBfm4.zip") in path_dgm1_th folder for further processing
 
 unzipped <- file.path(envrmt$path_dgm1_th, "unzipped_tiles")
 dir_create(unzipped)
@@ -180,12 +174,10 @@ tif_files <- dir_ls(inner_zip_dir, regexp = "\\.tif$", recurse = TRUE)
 collection <- sprc(tif_files)
 mosaic <- mosaic(collection)
 
-# Load AOI
-aoi <- vect(file.path(envrmt$path_aoi, "harz_boundary_2000m_buffer.shp"))
 
 # Ensure CRS matches
 if (!same.crs(mosaic, aoi)) {
-  aoi <- project(aoi, mosaic)
+  aoi <- st_transform(aoi, crs(mosaic))
 }
 
 # Clip (crop + mask)
@@ -194,7 +186,6 @@ mosaic_clipped <- crop(mosaic, aoi) |> mask(aoi)
 # Save clipped DGM
 outfile <- file.path(envrmt$path_raw, "dgm1_merged_th.tif")
 writeRaster(mosaic_clipped, outfile, overwrite = TRUE)
-
 
 # ================================= DGM1 Final Merge =================================
 
@@ -229,8 +220,8 @@ if (length(dgm_tiles) == 0) {
 }
 
 # Merge all tiles
-dgm_merged <- do.call(mosaic, c(dgm_tiles, fun = "mean"))
+dgm_merged <- do.call(terra::mosaic, c(dgm_tiles, fun = mean))
 
 # Save merged DGM as GeoTIFF
-output_path <- file.path(envrmt$path_dgm1, "dgm1_merged.tif")
-writeRaster(dgm_merged, output_path, overwrite = TRUE)
+output_path <- file.path(envrmt$path_dgm1, "dem_harz.tif")
+terra::writeRaster(dgm_merged, output_path, overwrite = TRUE)
