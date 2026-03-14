@@ -1,3 +1,13 @@
+# ================================= Notes =================================
+#
+# Creates rectangular training areas (multiples of 128 m) around manually
+# defined point locations within the Harz region.
+#
+# Input:  data/aoi/harz_boundary.shp
+# Output: data/modelling_data/training_areas.gpkg
+#         docs/training_areas_visualization.png
+#
+
 # ================================= Set up =================================
 library(envimaR)
 
@@ -123,7 +133,7 @@ plot <- ggplot() +
 print(plot)
 
 ggsave(
-  filename = file.path(envrmt$path_run, "training_areas_visualization.png"),
+  filename = file.path(envrmt$path_docs, "training_areas_visualization.png"),
   plot = plot,
   width = 12,
   height = 7,
@@ -135,7 +145,7 @@ cat("Visualization saved.\n\n")
 
 # ================================= Save Geopackage =================================
 # Define output path for training areas
-output_path <- file.path(envrmt$path_modelling, "training_areas.gpkg")
+output_path <- file.path(envrmt$path_modelling_data, "training_areas.gpkg")
 
 # Write training areas to GeoPackage
 st_write(

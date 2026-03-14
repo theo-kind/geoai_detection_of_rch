@@ -1,3 +1,11 @@
+# ================================= Notes =================================
+#
+# Splits the merged Harz DEM into 5 km x 5 km tiles for visual inspection
+# and secondary processing. Tiles containing only NA values are skipped.
+#
+# Input:  data/dem1/dem_harz.tif
+# Output: data/dem1/dem_tiles_5km/dem_tile_<row>_<col>.tif
+#
 # ================================= Set up =================================
 library(envimaR)
 
@@ -16,26 +24,26 @@ rootDir <- envimaR::alternativeEnvi(
 path <- file.path(rootDir, "src", "00_geoAI_setup.R")
 source(path, echo = TRUE)
 
-# ================================= create tiles of dem =================================
+# ================================= create chunks of dem =================================
 # Load DEM
-dgm <- rast(file.path(envrmt$path_dgm1, "dem_harz.tif"))
+dem <- rast(file.path(envrmt$path_dem1, "dem_harz.tif"))
 
-# Define tile size in meters (10 x 10 km)
-tile_size <- 10000
+# Define tile size in meters 
+tile_size <- 5000
 
 # Get DEM extent
-dgm_extent <- ext(dgm)
-xmin <- dgm_extent$xmin
-xmax <- dgm_extent$xmax
-ymin <- dgm_extent$ymin
-ymax <- dgm_extent$ymax
+dem_extent <- ext(dem)
+xmin <- dem_extent$xmin
+xmax <- dem_extent$xmax
+ymin <- dem_extent$ymin
+ymax <- dem_extent$ymax
 
 # Calculate number of tiles
 n_tiles_x <- ceiling((xmax - xmin) / tile_size)
 n_tiles_y <- ceiling((ymax - ymin) / tile_size)
 
 # Create output directory
-tiles_output_dir <- file.path(envrmt$path_dgm_tiles)
+tiles_output_dir <- file.path(envrmt$path_dem_tiles_5km)
 if (!dir.exists(tiles_output_dir)) {
   dir.create(tiles_output_dir, recursive = TRUE)
 }
@@ -52,7 +60,7 @@ for (i in 1:n_tiles_x) {
     y_end <- min(y_start + tile_size, ymax)
     
     tile_extent <- ext(x_start, x_end, y_start, y_end)
-    tile <- crop(dgm, tile_extent)
+    tile <- crop(dem, tile_extent)
     
     if (!all(is.na(values(tile)))) {
       filename <- file.path(
@@ -78,14 +86,3 @@ for (i in 1:n_tiles_x) {
     }
   }
 }
-
-# ================================= metadata csv =================================
-# Convert list to data frame
-tiles_info <- do.call(rbind, tile_list)
-rownames(tiles_info) <- NULL
-
-# Save metadata
-metadata_file <- file.path(tiles_output_dir, "tiles_metadata.csv")
-write.csv(tiles_info, metadata_file, row.names = FALSE)
-
-cat("Created", nrow(tiles_info), "tiles in", tiles_output_dir, "\n")

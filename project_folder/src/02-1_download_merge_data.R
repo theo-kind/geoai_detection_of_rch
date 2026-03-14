@@ -1,3 +1,20 @@
+# ================================= Notes =================================
+#
+# Downloads and merges DGM1 tiles from three federal states into a single
+# DEM covering the full Harz AOI.
+# Lower Saxony tiles are downloaded automatically; 
+# Saxony-Anhalt and Thuringia tiles must be downloaded manually (see inline comments).
+#
+# Input:  data/aoi/harz_boundary.shp
+#         data/raw/dgm1_ni/  (auto-downloaded)
+#         data/raw/dgm1_st/  (manual download required)
+#         data/raw/dgm1_th/  (manual download required)
+# Output: data/raw/dgm1_merged_ni.tif
+#         data/raw/dgm1_merged_st.tif
+#         data/raw/dgm1_merged_th.tif
+#         data/dem1/dem_harz.tif
+#         docs/dgm1_harz_overview.png
+#
 # ================================= Set up =================================
 library(envimaR)
 
@@ -225,3 +242,21 @@ dgm_merged <- do.call(terra::mosaic, c(dgm_tiles, fun = mean))
 # Save merged DGM as GeoTIFF
 output_path <- file.path(envrmt$path_dgm1, "dem_harz.tif")
 terra::writeRaster(dgm_merged, output_path, overwrite = TRUE)
+
+# ================================= Create Plot ================================
+# Load the final DEM
+dem <- rast(file.path(envrmt$path_dem1, "dem_harz.tif"))
+
+# Load AOI
+aoi <- st_read(file.path(envrmt$path_aoi, "harz_boundary.shp"))
+
+# Ensure AOI has same CRS as DEM
+aoi <- st_transform(aoi, crs(dem))
+
+
+# save to docs folder
+output_plot_path <- file.path(envrmt$path_docs, "dgm1_harz_overview.png")
+png(filename = output_plot_path, width = 800, height = 600, res = 150)
+plot(dem, main = "DEM of Harz Region", col = viridis::viridis(100))
+dev.off()
+

@@ -1,3 +1,22 @@
+# ================================= Notes =================================
+#
+# Central setup script called at the start of every pipeline script.
+# Configures the Python environment, loads R packages, creates the project
+# folder structure via envimaR, and sources all helper functions.
+#
+# Used Software versions:
+#   R 4.5.2  |  Python 3.10.19  |  TensorFlow 2.15.0  |  Keras 2.15.0
+#
+# ================================= Set up =================================
+
+library(reticulate)
+
+assignInNamespace('is_conda_python', function(x){ return(FALSE) }, ns='reticulate')
+reticulate::use_python("/opt/homebrew/Cellar/micromamba/2.3.3_1/envs/geoai_metal/bin/python") 
+py_config()
+keras::py_require_legacy_keras()
+
+
 # list of packages to load
 packagesToLoad <- c(
   'terra',
@@ -8,19 +27,11 @@ packagesToLoad <- c(
   'reticulate',
   'sf',
   'rsample',
-  'tfdatasets',
   'purrr',
   'stars',
   'magick',
   'fs',
   'ggplot2'
-)
-
-# VAT-specific packages
-appendPackagesToLoad <- c(
-  'jsonlite',
-  'yaml',
-  'glue'
 )
 
 # mandantory folder structure
@@ -32,31 +43,32 @@ projectDirList <- c(
   'data/raw/dgm1_ni/',
   'data/raw/dgm1_st/',
   'data/raw/dgm1_th/',
-  'data/dgm1/',
-  'data/dgm1/dgm_tiles/',
-  'data/dgm1/processed',
-  'data/dgm1/processed/VAT',
+  'data/dem1/',
+  'data/dem1/dem_tiles_5km/',
+  'data/dem1/dem_tiles_5km/open_pos',
+  'data/dem1/dem_tiles_5km/svf',
+  'data/dem1/dem_tiles_5km/vat_4b',
+  'data/dem1/dem_tiles_5km/vat_3b',
+  'data/modelling_data',
   'data/modelling/model_training_data/',
-  'data/modelling/model_training_data/dgm/',
+  'data/modelling/model_training_data/dem/',
   'data/modelling/model_training_data/mask/',
   'data/modelling/models/',
   'data/modelling/prediction/',
+  'data/modelling/prediction/chunks',
   'data/modelling/validation/',
   'data/modelling/model_testing_data/',
-  'data/modelling/model_testing_data/dgm/',
+  'data/modelling/model_testing_data/dem/',
   'data/modelling/model_testing_data/mask/',
   'docs/',
+  'docs/grid_search/',
+  'docs/grid_search/test',
+  'docs/grid_search/hist',
   'run/',
+  'results/',
   'tmp',
   'src/',
   'src/functions/'
-)
-
-# VAT-specific folders
-appendProjectDirList <- c(
-  'data/modelling/dgm_vat/',
-  'data/modelling/dgm_vat/individual_layers/',
-  'data/modelling/dgm_vat/metadata/'
 )
 
 
@@ -86,7 +98,7 @@ envrmt <- envimaR::createEnvi(
 terraOptions(tempdir = envrmt$path_tmp)
 
 
-# load functions
+# load functions from the functions folder
 lapply(
   list.files(
     file.path(envrmt$path_functions),

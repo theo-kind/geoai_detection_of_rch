@@ -1,3 +1,11 @@
+# ================================= Notes =================================
+#
+# Downloads the Harz region boundary from OpenStreetMap, reprojects it to
+# UTM Zone 32N (EPSG:32632), and saves it as a shapefile.
+#
+# Input:  - (OpenStreetMap query)
+# Output: data/aoi/harz_boundary.shp
+#
 # ================================= Set up =================================
 library(envimaR)
 
