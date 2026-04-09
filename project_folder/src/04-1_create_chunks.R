@@ -4,9 +4,11 @@
 # large-area model inference. Tile size is a multiple of 128 px (model
 # input size). Tiles containing only NA values are skipped.
 #
-# Input:  data/dem1/dem_harz_DEM_HS_SL_SVF.tif
-# Output: data/modelling/prediction/chunks/dem_tile_<row>_<col>.tif
+# INPUT_LAYER_NAME: Specify which layer combination to use
+#   Options: "DEM_HS_SL_SVF", "HS_SL_SVF_OP", "VAT_DEM_HS_SL", etc.
 #
+# Input:  data/dem1/dem_harz_<INPUT_LAYER_NAME>.tif
+# Output: data/modelling/prediction/<INPUT_LAYER_NAME>/chunks/dem_tile_<row>_<col>.tif
 #
 # ================================= Set up =================================
 library(envimaR)
@@ -26,9 +28,28 @@ rootDir <- envimaR::alternativeEnvi(
 path <- file.path(rootDir, "src", "00_geoAI_setup.R")
 source(path, echo = TRUE)
 
+# ================================= Parameters =================================
+# Options: "DEM_HS_SL_SVF", "HS_SL_SVF_OP", "VAT_DEM_HS_SL", "VAT4b", etc.
+
+INPUT_LAYER_NAME <- "DEM_SL_SVF_OP"
+
+# ================================= Create layer-specific directory structure =================================
+# Create a dedicated subfolder for each input layer
+layer_prediction_root <- file.path(envrmt$path_prediction, INPUT_LAYER_NAME)
+if (!dir.exists(layer_prediction_root)) {
+  dir.create(layer_prediction_root, recursive = TRUE)
+}
+
 # ================================= create tiles of dem-derivative =================================
-# Load DEM-derivative multiband-raster (hillshade, slope, sky-view factor)
-dem <- rast(file.path(envrmt$path_dem1, "dem_harz_DEM_HS_SL_SVF.tif"))
+# Load DEM-derivative multiband-raster
+dem_filepath <- file.path(envrmt$path_dem1, paste0("dem_harz_", INPUT_LAYER_NAME, ".tif"))
+
+if (!file.exists(dem_filepath)) {
+  stop("DEM file not found: ", dem_filepath, 
+       "\nMake sure the input layer '", INPUT_LAYER_NAME, "' exists.")
+}
+
+dem <- rast(dem_filepath)
 
 # Define tile size in meters (factor of 128 to ensure compatibility with model input shape)
 tile_size <- 5120
@@ -44,10 +65,10 @@ ymax <- dem_extent$ymax
 n_tiles_x <- ceiling((xmax - xmin) / tile_size)
 n_tiles_y <- ceiling((ymax - ymin) / tile_size)
 
-# Create output directory
-tiles_output_dir <- file.path(envrmt$path_chunks)
-if (!dir.exists(tiles_output_dir)) {
-  dir.create(tiles_output_dir, recursive = TRUE)
+# Create output directory for chunks
+chunks_output_dir <- file.path(layer_prediction_root, "chunks")
+if (!dir.exists(chunks_output_dir)) {
+  dir.create(chunks_output_dir, recursive = TRUE)
 }
 
 # Generate tiles
@@ -66,7 +87,7 @@ for (i in 1:n_tiles_x) {
     
     if (!all(is.na(values(tile)))) {
       filename <- file.path(
-        tiles_output_dir, 
+        chunks_output_dir, 
         sprintf("dem_tile_%02d_%02d.tif", i, j)
       )
       

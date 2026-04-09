@@ -5,7 +5,7 @@
 # folder structure via envimaR, and sources all helper functions.
 #
 # Used Software versions:
-#   R 4.5.2  |  Python 3.10.19  |  TensorFlow 2.15.0  |  Keras 2.15.0
+#   R 4.5.2  |  Python 3.10.19  |  TensorFlow 2.15.0  |  Keras 2.15.0  |  SAGA GIS 9.11.1  |  QGIS 3.42  |  RVT-Plugin (QGIS) 0.10.0
 #
 # ================================= Set up =================================
 

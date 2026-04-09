@@ -1,18 +1,20 @@
 # ================================= Notes =================================
 #
-# Runs full-AOI inference, reassembles georeferenced mosaics, and derives
-# vector outputs. Set MODEL_ID to the best run from experiment_results.csv.
-# Chunks with an existing mosaic.tif are skipped (safe to interrupt and resume).
+# This script performs full-AOI inference and reassembles georeferenced mosaics.
+# Set INPUT_LAYER_NAME and MODEL_ID to the best run from experiment_results.csv.
+# Chunks with existing mosaic.tif are skipped (safe to interrupt and resume).
 #
 # Input:  data/modelling/models/unet_<MODEL_ID>.hdf5
-#         data/modelling/prediction/prediction_dem_tiles/<chunk>/
+#         data/modelling/prediction/<INPUT_LAYER_NAME>/dem_tiles/<chunk>/
 #         data/aoi/harz_boundary.shp
-# Output: data/modelling/prediction/<MODEL_ID>/<chunk>/mosaic.tif
-#         data/modelling/prediction/<MODEL_ID>/final_mosaic.vrt
-#         data/modelling/prediction/<MODEL_ID>/final_mosaic.tif
-#         results/prediction_<MODEL_ID>_clipped.tif
-#         results/prediction_<MODEL_ID>_clipped.gpkg
-#         results/prediction_<MODEL_ID>_centroids.gpkg
+#
+# Output folder structure:
+#   data/modelling/prediction/<INPUT_LAYER_NAME>/
+#         ├── prediction_tiles/<MODEL_ID>/<chunk>/mosaic.tif       (intermediate)
+#         ├── vectors/prediction_*.gpkg                   (polygons, centroids)
+#         ├── final_mosaic.tif                           (full prediction)
+#         ├── final_mosaic_clipped.tif                   (clipped to mask)
+#         └── processing_metadata.csv
 #
 # ================================= Set up =================================
 library(envimaR)
@@ -29,26 +31,54 @@ path <- file.path(rootDir, "src", "00_geoAI_setup.R")
 source(path, echo = FALSE)
 
 Sys.setenv(GDAL_TMPDIR = envrmt$path_tmp)
+
 # ================================= Parameters =================================
-MODEL_ID   <- "DEM_HS_SL_SVF_25_2_F"
+
+INPUT_LAYER_NAME <- "DEM_SL_SVF_OP"
+MODEL_ID <- "DEM_SL_SVF_OP_20_5_F"
 batch_size <- 8
+THRESHOLD <- 0.5
 
-# Root folder containing one subfolder per chunk (output of script 04-2)
-tiles_root <- file.path(envrmt$path_prediction, "prediction_dem_tiles")
+# Optional: Clip to mask (set to FALSE to skip)
+USE_MASK <- TRUE
+MASK_FILE <- "clc_2018_sel_311-312-313-324_clipped.gpkg"
 
-# Output root: path_prediction/<MODEL_ID>/<chunk_name>/mosaic.tif
-model_out_root <- file.path(envrmt$path_prediction, MODEL_ID)
-if (!dir.exists(model_out_root)) {
-  dir.create(model_out_root, recursive = TRUE)
+# ================================= Setup Directory Structure =================================
+
+layer_prediction_root <- file.path(envrmt$path_prediction, INPUT_LAYER_NAME)
+
+# Verify prediction tiles directory exists
+tiles_root <- file.path(layer_prediction_root, "dem_tiles")
+if (!dir.exists(tiles_root)) {
+  stop("Prediction tiles directory not found: ", tiles_root,
+       "\nPlease run script 04-2 with INPUT_LAYER_NAME = '", 
+       INPUT_LAYER_NAME, "' first.")
 }
 
-# ================================= Load model =================================
-unet_model <- keras::load_model_hdf5(
-  file.path(envrmt$path_models, paste0("unet_", MODEL_ID, ".hdf5")),
-  compile = TRUE
-)
+# Setup output directories
+model_chunks_root <- file.path(layer_prediction_root, paste0("prediction_", MODEL_ID))
+if (!dir.exists(model_chunks_root)) {
+  dir.create(model_chunks_root, recursive = TRUE)
+}
 
-# ================================= Collect chunk subfolders =================================
+vectors_dir <- file.path(layer_prediction_root, "vectors")
+if (!dir.exists(vectors_dir)) {
+  dir.create(vectors_dir, recursive = TRUE)
+}
+
+# ================================= Load Model =================================
+
+model_path <- file.path(envrmt$path_models, paste0("unet_", MODEL_ID, ".hdf5"))
+
+if (!file.exists(model_path)) {
+  stop("Model file not found: ", model_path,
+       "\nPlease check your MODEL_ID.")
+}
+
+unet_model <- keras::load_model_hdf5(model_path, compile = TRUE)
+
+# ================================= Collect Chunk Subfolders =================================
+
 chunk_dirs <- list.dirs(tiles_root, full.names = TRUE, recursive = FALSE)
 
 if (length(chunk_dirs) == 0) {
@@ -56,218 +86,160 @@ if (length(chunk_dirs) == 0) {
        "\nPlease run script 04-2 first.")
 }
 
-message("Found ", length(chunk_dirs), " chunk(s) to predict.")
+# ================================= Predict Per Chunk =================================
 
-# ================================= Predict per chunk =================================
 for (chunk_dir in chunk_dirs) {
   
   chunk_name <- basename(chunk_dir)
+  chunk_out_dir <- file.path(model_chunks_root, chunk_name)
+  mosaic_file <- file.path(chunk_out_dir, "mosaic.tif")
   
-  # ------------------------------------------------------------------
-  # Skip logic: mosaic.tif inside the chunk output folder marks a
-  # successfully completed chunk. Safe to interrupt and resume.
-  # ------------------------------------------------------------------
-  chunk_out_dir <- file.path(model_out_root, chunk_name)
-  mosaic_file   <- file.path(chunk_out_dir, "mosaic.tif")
-  
+  # Skip if already processed
   if (file.exists(mosaic_file)) {
-    message("  [SKIP] ", chunk_name, " (mosaic.tif already exists)")
     next
   }
   
-  # Check that this chunk was fully prepared (target.tif is the
-  # completion marker written last by script 04-2)
+  # Verify chunk completeness
   target_file <- file.path(chunk_dir, "target.tif")
   if (!file.exists(target_file)) {
-    warning("  [WARN] Skipping ", chunk_name,
-            ": target.tif not found – chunk may be incomplete.")
+    warning("Skipping ", chunk_name, ": target.tif not found.")
     next
   }
   
-  message("  [PRED] ", chunk_name, " ...")
-  
-  # ------------------------------------------------------------------
-  # Sanity check: make sure tiles actually exist in the chunk folder
-  # ------------------------------------------------------------------
+  # Verify PNG tiles exist
   png_files <- list.files(chunk_dir, pattern = "\\.png$")
-  
   if (length(png_files) == 0) {
-    warning("  [WARN] No PNG tiles found in ", chunk_dir, " – skipping.")
+    warning("No PNG tiles found in ", chunk_dir)
     next
   }
   
-  # ------------------------------------------------------------------
-  # Build prediction dataset and run inference.
-  # prepare_ds() handles numeric sorting of tiles internally when
-  # predict = TRUE, so we only pass the directory path via subsets_path.
-  # ------------------------------------------------------------------
+  # Build prediction dataset and run inference
   prediction_dataset <- prepare_ds(
-    train        = FALSE,
-    predict      = TRUE,
+    train = FALSE,
+    predict = TRUE,
     subsets_path = chunk_dir,
-    batch_size   = batch_size
+    batch_size = batch_size
   )
   
   pred_subsets <- predict(object = unet_model, x = prediction_dataset)
   
-  # ------------------------------------------------------------------
-  # Rebuild georeferenced raster from tile predictions.
-  # rebuild_img() saves its output to file.path(out_path, model_name)/,
-  # so we pass model_out_root as out_path and chunk_name as model_name
-  # -> chunk_out_dir = path_prediction/<MODEL_ID>/<chunk_name>/
-  # ------------------------------------------------------------------
+  # Rebuild georeferenced raster from tile predictions
   target_rst <- terra::rast(target_file)
   
   rebuild_img(
     pred_subsets = pred_subsets,
-    out_path     = model_out_root,
-    target_rst   = target_rst,
-    model_name   = chunk_name     
+    out_path = model_chunks_root,
+    target_rst = target_rst,
+    model_name = chunk_name
   )
-  
-  message("    -> Saved: ", mosaic_file)
   
   # Free memory before next chunk
   rm(pred_subsets, prediction_dataset, target_rst)
   gc()
 }
 
-# ================================= Merge all chunk mosaics =================================
-message("\nMerging chunk mosaics into final prediction raster ...")
+# ================================= Merge All Chunk Mosaics =================================
 
 chunk_mosaics <- list.files(
-  model_out_root,
-  pattern     = "mosaic\\.tif$",
-  full.names  = TRUE,
-  recursive   = TRUE   # one level deep into chunk subfolders
+  model_chunks_root,
+  pattern = "mosaic\\.tif$",
+  full.names = TRUE,
+  recursive = TRUE
 )
 
 if (length(chunk_mosaics) == 0) {
-  stop("No chunk mosaics found in: ", model_out_root)
+  stop("No chunk mosaics found in: ", model_chunks_root)
 }
 
-message("  Found ", length(chunk_mosaics), " chunk mosaic(s).")
-
-final_vrt <- file.path(model_out_root, "final_mosaic.vrt")
-final_tif <- file.path(model_out_root, "final_mosaic.tif")
+final_vrt <- file.path(layer_prediction_root, "final_mosaic.vrt")
+final_tif <- file.path(layer_prediction_root, "final_mosaic.tif")
 
 sf::gdal_utils(
-  util        = "buildvrt",
-  source      = chunk_mosaics,
+  util = "buildvrt",
+  source = chunk_mosaics,
   destination = final_vrt
 )
 
 sf::gdal_utils(
-  util        = "warp",
-  source      = final_vrt,
+  util = "warp",
+  source = final_vrt,
   destination = final_tif
 )
 
-message("Done.")
-message("Final prediction raster: ", final_tif)
+# ================================= Load and Prepare Mask/AOI =================================
 
-
-
-# ================================= Clip to AOI =================================
-
-MODEL_ID   <- "DEM_HS_SL_SVF_25_2_F"
-
-if (!exists("final_tif")) {
-  final_tif <- file.path(envrmt$path_prediction, MODEL_ID, "final_mosaic.tif")
+if (USE_MASK) {
+  
+  mask_path <- file.path(envrmt$path_corine, MASK_FILE)
+  
+  if (!file.exists(mask_path)) {
+    stop("Mask file not found: ", mask_path)
+  }
+  
+  aoi <- sf::st_read(mask_path, quiet = TRUE)
+  
+} else {
+  
+  aoi <- sf::st_read(
+    file.path(envrmt$path_aoi, "harz_boundary.shp"),
+    quiet = TRUE
+  )
 }
-if (!file.exists(final_tif)) {
-  stop("final_mosaic.tif not found: ", final_tif,
-       "\nPlease run the prediction loop first (or check MODEL_ID).")
-}
-
-aoi <- sf::st_read(
-  file.path(envrmt$path_aoi, "harz_boundary.shp"),
-  quiet = TRUE
-)
 
 final_rst <- terra::rast(final_tif)
 
-# Reproject AOI to raster CRS if necessary
+# Reproject to raster CRS if necessary
 if (!sf::st_crs(aoi) == sf::st_crs(terra::crs(final_rst))) {
   aoi <- sf::st_transform(aoi, terra::crs(final_rst))
 }
 
+# Clip to mask
 clipped_rst <- terra::mask(
   terra::crop(final_rst, terra::vect(aoi)),
   terra::vect(aoi)
 )
 
-result_file <- file.path(
-  envrmt$path_results,
-  paste0("prediction_", MODEL_ID, "_clipped.tif")
-)
+clipped_file <- file.path(layer_prediction_root, "final_mosaic_clipped.tif")
+terra::writeRaster(clipped_rst, clipped_file, overwrite = TRUE)
 
-terra::writeRaster(
-  clipped_rst,
-  result_file,
-  overwrite = TRUE
-)
+# ================================= Binarize and Vectorize =================================
 
-message("Clipped prediction saved to: ", result_file)
-
-
-
-# ================================= Vectorize prediction =================================
-
-MODEL_ID   <- "DEM_HS_SL_SVF_25_2_F"
-
-if (!exists("clipped_rst")) {
-  result_file <- file.path(
-    envrmt$path_results,
-    paste0("prediction_", MODEL_ID, "_clipped.tif")
-  )
-  if (!file.exists(result_file)) {
-    stop("Clipped raster not found: ", result_file,
-         "\nPlease run the clipping section first.")
-  }
-  clipped_rst <- terra::rast(result_file)
-}
-
-# Binarize: pixels > 0.5 become 1, everything else NA
+# Binarize: pixels > threshold become 1, everything else NA
 binary_rst <- terra::classify(
   clipped_rst,
-  matrix(c(-Inf, 0.5, NA,
-           0.5,  Inf,  1), ncol = 3, byrow = TRUE)
+  matrix(c(-Inf, THRESHOLD, NA,
+           THRESHOLD, Inf, 1), ncol = 3, byrow = TRUE)
 )
 
+# Vectorize to polygons
+pred_vector <- binary_rst |>
   terra::as.polygons(dissolve = TRUE) |>
   sf::st_as_sf() |>
   sf::st_cast("POLYGON") |>
   terra::vect()
 
-vector_file <- file.path(
-  envrmt$path_results,
-  paste0("prediction_", MODEL_ID, "_clipped.gpkg")
-)
+# Save polygons
+vector_file <- file.path(vectors_dir, "prediction_polygons.gpkg")
+terra::writeVector(pred_vector, vector_file, filetype = "GPKG", overwrite = TRUE)
 
-terra::writeVector(
-  pred_vector,
-  vector_file,
-  filetype = "GPKG",
-  overwrite = TRUE
-)
-
-message("Vectorized prediction saved to: ", vector_file)
-
-# ================================= Polygons to centroids =================================
-
+# Convert to centroids and save
 pred_centroids <- terra::centroids(pred_vector)
+centroids_file <- file.path(vectors_dir, "prediction_centroids.gpkg")
+terra::writeVector(pred_centroids, centroids_file, filetype = "GPKG", overwrite = TRUE)
 
-centroids_file <- file.path(
-  envrmt$path_results,
-  paste0("prediction_", MODEL_ID, "_centroids.gpkg")
+# ================================= Save Processing Metadata =================================
+
+metadata <- data.frame(
+  timestamp = Sys.time(),
+  model_id = MODEL_ID,
+  input_layer = INPUT_LAYER_NAME,
+  threshold = THRESHOLD,
+  mask_applied = USE_MASK,
+  mask_file = if (USE_MASK) MASK_FILE else NA,
+  n_polygons = nrow(pred_vector),
+  n_centroids = nrow(pred_centroids),
+  chunks_processed = length(chunk_mosaics)
 )
 
-terra::writeVector(
-  pred_centroids,
-  centroids_file,
-  filetype = "GPKG",
-  overwrite = TRUE
-)
-
-message("Centroids saved to: ", centroids_file)
+metadata_file <- file.path(layer_prediction_root, "processing_metadata.csv")
+write.csv(metadata, metadata_file, row.names = FALSE)

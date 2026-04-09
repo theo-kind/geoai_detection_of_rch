@@ -16,6 +16,7 @@
 #         data/dem1/dem_harz_DEM_HS_SL_SVF.tif     (DEM | HS | Slope | SVF)
 #         data/dem1/dem_harz_HS_SL_SVF_OP.tif      (HS | Slope | SVF | OpenPos)
 #         data/dem1/dem_harz_VAT_DEM_HS_SL.tif     (VAT | DEM | HS | Slope)
+#         data/dem1/dem_harz_DEM_SL_SVF_OP.tif     (DEM | SL | SVF| OpenPos)
 #
 # ================================= Set up =================================
 library(envimaR)
@@ -37,7 +38,6 @@ source(path, echo = FALSE)
 paths_to_merge <- list(
   open_pos = envrmt$path_open_pos,
   svf = envrmt$path_svf,
-  vat_3b = envrmt$path_vat_3b,
   vat_4b = envrmt$path_vat_4b
 )
 
@@ -138,6 +138,23 @@ r_4<- rast(files[c("b6", "b1", "b2", "b3")])
 r_4_out_file <- file.path(
   envrmt$path_dem1,
   "dem_harz_VAT_DEM_HS_SL.tif"
+)
+
+# write multi-band GeoTIFF
+writeRaster(
+  r_4,
+  r_4_out_file,
+  overwrite = TRUE
+)
+
+
+# create dem_harz_VAT_DEM_HS_SL.tif:
+r_4<- rast(files[c("b1", "b3", "b4", "b5")])
+
+# define output path
+r_4_out_file <- file.path(
+  envrmt$path_dem1,
+  "dem_harz_DEM_SL_SVF_OP.tif"
 )
 
 # write multi-band GeoTIFF

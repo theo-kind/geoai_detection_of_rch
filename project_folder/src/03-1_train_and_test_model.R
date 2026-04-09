@@ -1,7 +1,7 @@
 # ================================= Notes =================================
 #
 # Grid-search training pipeline. Trains and evaluates one U-Net model per
-# parameter combination (input layer, epochs, buffer, remove-NA flag)
+# parameter combination (input layer, epochs, buffer, remove-NA)
 # and records all results in a single CSV.
 #
 # Input:  data/dem1/dem_harz_<INPUT_LAYER>.tif
@@ -38,20 +38,59 @@ path <- file.path(rootDir, "src", "00_geoAI_setup.R")
 source(path, echo = TRUE)
 
 # ================================= Define Grid Parameters =================================
+# parameters used in the first run:
+# GRID_PARAMS <- expand.grid(
+#  INPUT_LAYER = c("DEM_HS_SL_SVF","HS_SL_SVF_OP","VAT4b","VAT_DEM_HS_SL"),
+#  EPOCHS = c(15, 20, 25),
+#  BUFFER = c(0,2,5),
+#  REMOVE_NA = c(TRUE, FALSE),
+#  stringsAsFactors = FALSE
+#)
 
 GRID_PARAMS <- expand.grid(
-  INPUT_LAYER = c("DEM_HS_SL_SVF","HS_SL_SVF_OP","VAT4b","VAT_DEM_HS_SL"),
-  EPOCHS = c(15, 20, 25),
-  BUFFER = c(0,2,5),
-  REMOVE_NA = c(TRUE, FALSE),
+  INPUT_LAYER = c("DEM_HS_SL_SVF", "VAT_DEM_HS_SL", "HS_SL_SVF_OP", "DEM_SL_SVF_OP"),
+  EPOCHS      = c(15, 20,25),
+  BUFFER      = c(0, 2, 5),
+  REMOVE_NA   = c(FALSE, TRUE),
   stringsAsFactors = FALSE
 )
+
 # Save GRID_PARAMS as CSV
 write.csv(
   GRID_PARAMS,
   file = file.path(envrmt$path_grid_search, "GRID_PARAMS.csv"),
   row.names = FALSE
 )
+
+# ================================= Helper function for F1-Score =================================
+calculate_f1_score <- function(predictions, masks, threshold = 0.5) {
+  # Apply threshold to predictions
+  pred_binary <- ifelse(predictions >= threshold, 1, 0)
+  mask_binary <- ifelse(masks >= 0.5, 1, 0)
+  
+  # Flatten arrays
+  pred_flat <- as.vector(pred_binary)
+  mask_flat <- as.vector(mask_binary)
+  
+  # Calculate confusion matrix
+  tp <- sum(pred_flat == 1 & mask_flat == 1)
+  fp <- sum(pred_flat == 1 & mask_flat == 0)
+  fn <- sum(pred_flat == 0 & mask_flat == 1)
+  
+  # Calculate precision and recall
+  precision <- if ((tp + fp) > 0) tp / (tp + fp) else 0
+  recall <- if ((tp + fn) > 0) tp / (tp + fn) else 0
+  
+  # Calculate F1-Score
+  f1 <- if ((precision + recall) > 0) {
+    2 * (precision * recall) / (precision + recall)
+  } else {
+    0
+  }
+  
+  return(f1)
+}
+
 
 # ================================= GRID SEARCH LOOP =================================
 
@@ -81,6 +120,10 @@ for (run in seq(1, nrow(GRID_PARAMS))) {
     envrmt$path_modelling_data,
     "rch_sites.gpkg"
   )
+  
+  keras::k_clear_session()
+  tensorflow::tf$compat$v1$reset_default_graph()
+  gc()
   
   # ================= Clean folders =================
   # remove files in training and testing folders
@@ -496,8 +539,21 @@ for (run in seq(1, nrow(GRID_PARAMS))) {
   # Evaluate the model with test set
   ev <- unet_model$evaluate(testing_dataset)
   
+  # Get raw predictions for F1-Score calculation
+  predictions <- predict(object = unet_model, x = testing_dataset)
+  
+  # Load ground truth masks
+  masks <- array(dim = dim(predictions))
+  for (i in 1:nrow(test_file)) {
+    mask_png <- png::readPNG(test_file$mask[i])
+    masks[i, , , ] <- mask_png
+  }
+  
+  # Calculate F1-Score (threshold 0.5)
+  f1_score <- calculate_f1_score(predictions, masks, threshold = 0.5)
+  
   # ================================= Visual comparison =================================
-  set.seed(101)
+  set.seed(42)
   
   # Get sample of data from testing data 
   t_sample <- floor(runif(n = 10, min = 1, max = nrow(test_file)))
@@ -564,6 +620,7 @@ for (run in seq(1, nrow(GRID_PARAMS))) {
     ValAccuracy = round(ev[2], 6),
     ValRecall = round(ev[3], 6),
     ValPrecision = round(ev[4], 6),
+    ValF1Score = round(f1_score, 6),
     stringsAsFactors = FALSE
   )
   
