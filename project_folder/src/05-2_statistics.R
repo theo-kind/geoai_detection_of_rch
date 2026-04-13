@@ -8,17 +8,14 @@
 # - Epochs
 #
 # Output: Faceted barplot with mean F1-score + SD for each parameter value.
-#         
 #         /docs/grid_search/f1_score_comparison.png
 #
 # ============================== Set up ===================================
 library(envimaR)
 library(tidyverse)
 
-# Define the project root folder
 rootDir <- paste0(getwd(), "/project_folder")
 
-# Get the root folder actually used
 rootDir <- envimaR::alternativeEnvi(
   root_folder = rootDir,
   alt_env_id = "COMPUTERNAME",
@@ -26,18 +23,14 @@ rootDir <- envimaR::alternativeEnvi(
   alt_env_root_folder = "F:/BEN/edu"
 )
 
-# MANDATORY: setup script
 source(file.path(rootDir, "src", "00_geoAI_setup.R"))
-
 
 # ============================== Parameters ===============================
 params <- c("Buffer", "RemoveNA", "InputLayer", "Epochs")
 
-
 # =========================== Load data ===================================
 results_file <- file.path(envrmt$path_grid_search, "experiment_results.csv")
 df <- read.csv(results_file)
-
 
 # ============================== Reshape ==================================
 df_long <- df %>%
@@ -48,19 +41,21 @@ df_long <- df %>%
     values_transform = list(Value = as.character)
   )
 
-
 # ============================= Aggregate ================================
 summary_df <- df_long %>%
   group_by(Parameter, Value) %>%
   summarise(
     Mean_F1 = mean(ValF1Score),
     SD_F1 = sd(ValF1Score),
+    Count = n(),
     .groups = "drop"
   ) %>%
   mutate(
+    Mean_F1 = round(Mean_F1, 4),
     Parameter = factor(Parameter, levels = params)
-  )
-
+  ) %>%
+  arrange(Parameter, Value) %>%
+  as.data.frame()
 
 # ============================== Labels ==================================
 label_df <- tibble(
@@ -69,7 +64,6 @@ label_df <- tibble(
   x = -Inf,
   y = Inf
 )
-
 
 # =============================== Plot ===================================
 p <- ggplot(summary_df, aes(x = Value, y = Mean_F1)) +
@@ -82,10 +76,17 @@ p <- ggplot(summary_df, aes(x = Value, y = Mean_F1)) +
   ) +
   
   geom_text(
-    aes(label = Value, y = Mean_F1 * 0.5),
-    size = 3.5,
-    fontface = "bold",
+    aes(label = Value, y = Mean_F1 * 0.85),
+    size = 3,
     angle = 90
+  ) +
+  
+  geom_label(
+    aes(label = round(Mean_F1, 3), y = Mean_F1 + 0.01),
+    size = 2.5,
+    vjust = 1.3,
+    fill = "white",
+    label.size = 0.2
   ) +
   
   geom_text(
@@ -102,8 +103,12 @@ p <- ggplot(summary_df, aes(x = Value, y = Mean_F1)) +
   
   labs(
     x = NULL,
-    y = "F1 Score (%)"
+    y = "F1 Score"
   ) +
+  
+  coord_cartesian(ylim = c(0.5, 0.70)) +
+  
+  scale_y_continuous(breaks = seq(0.5, 0.70, 0.1)) +
   
   theme_minimal(base_size = 12) +
   theme(
@@ -116,6 +121,7 @@ p <- ggplot(summary_df, aes(x = Value, y = Mean_F1)) +
   )
 
 plot(p)
+
 # ============================== Export ==================================
 ggsave(
   file.path(envrmt$path_grid_search, "f1_score_comparison.png"),

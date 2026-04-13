@@ -28,7 +28,7 @@ source(path, echo = FALSE)
 
 INPUT_LAYER_NAME <- "DEM_SL_SVF_OP"  # Change as needed
 MODEL_ID <- "DEM_SL_SVF_OP_20_5_F"   # Best model from training
-GRID_SIZE_METERS <- 500                 # Change to test different grid sizes
+GRID_SIZE_METERS <- 1000             # Change to test different grid sizes
 
 # ================================= Setup Output Directories =================================
 
@@ -72,8 +72,10 @@ grid <- grid[aoi, ]
 total_points <- nrow(points_sf)
 grid$point_count <- lengths(sf::st_intersects(grid, points_sf))
 
-cell_area_km2 <- (GRID_SIZE_METERS / 1000) ^ 2
-grid$density_per_km2 <- grid$point_count / cell_area_km2
+
+
+grid$actual_area_km2 <- as.numeric(sf::st_area(grid)) / 1e6
+grid$density_per_km2 <- grid$point_count / grid$actual_area_km2
 
 # ================================= Summary Statistics =================================
 
@@ -99,19 +101,17 @@ plot_density <- ggplot(grid_with_data) +
     option = "viridis"
   ) +
   labs(
-    title = paste0("Charcoal Kiln Density"),
-    subtitle = paste0("Grid size: ", GRID_SIZE_METERS, " m | Model: ", MODEL_ID),
     x = "Easting",
     y = "Northing"
   ) +
-  theme_minimal() +
+  theme_bw() +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-    plot.subtitle = element_text(hjust = 0.5, size = 10, color = "gray50"),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5),
     panel.grid.major = element_line(color = "gray90", linewidth = 0.2),
-    legend.position = "right"
+    legend.position = c(0.925, 0.755),
+    legend.background = element_rect(fill = "white", color = "black", linewidth = 0.3),
+    legend.margin = margin(2, 2, 2, 2)
   )
-
 # ================================= Save Outputs =================================
 
 # Prepare grid for export (keep only necessary columns)
@@ -124,7 +124,7 @@ output_png <- file.path(
   output_base,
   paste0("density_map.png")
 )
-ggplot2::ggsave(output_png, plot_density, width = 8, height = 6, dpi = 300)
+ggplot2::ggsave(output_png, plot_density, width = 7, height = 4, dpi = 300)
 
 # Save grid as GeoPackage
 grid_gpkg <- file.path(
@@ -139,6 +139,8 @@ grid_shp <- file.path(
   "density_grid.shp"
 )
 sf::st_write(grid_export, grid_shp, append = FALSE, quiet = TRUE)
+
+plot_density
 
 # ================================= Export Statistics =================================
 

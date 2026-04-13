@@ -31,14 +31,17 @@ packagesToLoad <- c(
   'stars',
   'magick',
   'fs',
-  'ggplot2'
+  'ggplot2',
+  'dplyr'
 )
 
 # mandantory folder structure
 projectDirList <- c(
   'data/',
+  'data/osm/',
   'data/modelling/',
   'data/aoi/',
+  'data/corine/',
   'data/raw/',
   'data/raw/dgm1_ni/',
   'data/raw/dgm1_st/',
@@ -48,19 +51,18 @@ projectDirList <- c(
   'data/dem1/dem_tiles_5km/open_pos',
   'data/dem1/dem_tiles_5km/svf',
   'data/dem1/dem_tiles_5km/vat_4b',
-  'data/dem1/dem_tiles_5km/vat_3b',
   'data/modelling_data',
   'data/modelling/model_training_data/',
   'data/modelling/model_training_data/dem/',
   'data/modelling/model_training_data/mask/',
   'data/modelling/models/',
   'data/modelling/prediction/',
-  'data/modelling/prediction/chunks',
   'data/modelling/validation/',
   'data/modelling/model_testing_data/',
   'data/modelling/model_testing_data/dem/',
   'data/modelling/model_testing_data/mask/',
   'docs/',
+  'docs/statistics',
   'docs/grid_search/',
   'docs/grid_search/test',
   'docs/grid_search/hist',

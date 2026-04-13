@@ -4,7 +4,7 @@
 # and secondary processing. Tiles containing only NA values are skipped.
 #
 # Input:  data/dem1/dem_harz.tif
-# Output: data/dem1/dem_tiles_5km/dem_tile_<row>_<col>.tif
+# Output: data/dem1/dem_tiles_5km/dem_tile_<row>_<col>.tif 
 #
 # ================================= Set up =================================
 library(envimaR)
